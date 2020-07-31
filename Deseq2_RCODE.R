@@ -1,46 +1,150 @@
-install.packages("gplots")
-install.packages("calibrate")
-install.packages("DESeq2")
-install.packages("ggplot2")
+---
+title: "R Notebook"
+output: html_notebook
+---
 
-library(DESeq2)
-library(gplots)
-library(calibrate)
-library(gglpot2)
-library(RColorBrewer)
-## RNA-seq analysis with DESeq2
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Cmd+Shift+Enter*. 
+```{r}
+#-- provide directory with htseq-count output files
+dir = ("/Input_HTCOUNTS")
+getwd()
+setwd("/Input_HTCOUNTS")
+#-- define the pattern of files to be analysed, the file shold end as _htcount.txt
+pattern="*_htcount.txt"
+currentjob <- "GSE116250"
+#-- provide metadata file containg file names and their the replicate information as below
+#metadata_file <- "metadata.txt"
+
+outfile <- "_count_matrix.tab"
+
+#' Title: deseq_from_htseqcount
+#' deseq_from_htseqcount(dir, pattern)
+#' @param dir 
+#' @param pattern 
+#' @param metadata_file 
+#'treatment_set1	treated
+# treatment_set2	treated
+# control_set1	untreated
+# control_set2	untreated
+#' @param outfile 
+#' @author ankushs  
+#' University of Oslo
+#' @return
+#' @export
+#'
+#' @examples
+deseq_from_htseqcount <- function(dir=dir, pattern, metadata_file,outfile)
+  #install.packages("GGally")
+  #install.packages("openxlsx")
+  #if (!requireNamespace('BiocManager', quietly = TRUE))
+    #install.packages('BiocManager')
+#BiocManager::install('EnhancedVolcano')
+
+  #--- Load package
+  library(tidyverse)
+  library(dplyr)
+  library(data.table)
+  library(DESeq2)
+  library(purrr)
+  library(GGally)
+  library(openxlsx)
+library(EnhancedVolcano)
+library("AnnotationDbi")
+library("org.Hs.eg.db")
+library("dplyr")
+#--- Load DESeq2 files
+dd <- list.files(path = dir,
+                   pattern=pattern, 
+                   full.names = F)
+  print(dd)
+#--- get count matrix          
+df_count_matrix <- data_frame(file_name = dd) %>% 
+    mutate(file_cont = map(file_name,fread,data.table = F))  %>%
+    unnest() %>% 
+    mutate(file_name = gsub(pattern="_htcount.txt",replacement="",file_name))  %>% 
+    spread(key = file_name , value = V3) %>%
+    dplyr::slice(0:nrow(.)) #removing unwanted alignment summary present at top #change 0 to number of lines to be removed
+
+ 
+#--- write count matrix in a file
+write_delim(df_count_matrix, paste(outfile,"_count_matrix.tab", sep=""),col_names = TRUE,delim="\t")
+setwd("ISCHEMIA_RNA_SEQ_116520/FOR_PAPER")
+write.table(df_count_matrix, file="ISCHEMIA_RNA_SEQ_116520/FOR_PAPER/COUNT_MATRIX.TAB", sep="\t")
+
+``` 
 
 
+```{r}
+Readcount <- read.table("COUNT_MATRIX.TAB", header=TRUE, sep = "\t", row.names = 1)
+metaData <- read.csv('../samplename1.txt', header = TRUE, sep = "\t")
+metaData
+  
+names<- make.unique(as.character(Readcount$ENSEMBL))
+  #CHecking duplicated Rownames
+  #unique(Readcount[,1])
+  #DUPID = duplicated(Readcount[,1])
+  #write.table(DUPID,"xew.txt")
+  Readcount
+  
+  row.names(Readcount)
+  colnames(Readcount)
+  countdata1 <- Readcount
+  countdata1
+  #plot(Readcount)
+  #png("readcount.png",1000, 1500, pointsize=14)
+  #dev.off()
+  
+  #Detecting "NA" in data 
+  #c= sum(is.na(countdata1))
+  #summarise(Readcount)
+  
+  #FINDING DUPLICATE
+  #x <- countdata1[ ,(1)]
+  #duplicated(x)
+  #y = x[duplicated(x)] 
+  #write.table(y, file="duplicatelist.txt")
+  #y
 
-# Import & pre-process ----------------------------------------------------
-setwd("~/Desktop/ANKUSH/MIAO_RNASeq/P1923_I18-1244/R-analysis/PPnegative vsPPpositive(B2B4 vs B1B3) ")
-# Importing data from htCounts
-countdata <- read.table("b2b4vsb1b3htcounts.tab", header=TRUE, row.names=1)
+```
 
-# Remove columns (inthis data first column)
-countdata <- countdata[ ,1:ncol(countdata)]
 
-# Convert to matrix
-countdata <- as.matrix(countdata)
-head(countdata)
+```{r Selecting  <columns, include=FALSE}
+#for selecting required columns
+#countdata1
+#countdata <- countdata1[ ,3:ncol(countdata)]
 
+countdata <- countdata1[ ,c(2:28)]
+  # Convert to matrix
+  countdata <- as.matrix(countdata)
+  library("DESeq2")
+
+countdata_symbol <- countdata
+rownames(countdata_symbol) <- Readcount$GeneSymbol
+```
+
+```{r}
 # Assign condition (first four are controls, second four contain the expansion)
-#(condition <- factor(c(rep("ctl", 1), rep("exp", 2))))
-
-#Assign condition (first and second are phototagpositive and 3rd and 4rth are phototag negative)
-condition <- c( "phototag positive","phototag positive","phototag negative","phototag negative")
+x <-(condition <- factor(c(rep("NF", 14), rep("Ischemia", 13))))
+(condition <- factor(c(rep("NF", 14), rep("Ischemia", 13))))
+```
 # Analysis with DESeq2 ----------------------------------------------------
+```{r}
+library(DESeq2)
 
 # Create a coldata frame and instantiate the DESeqDataSet. See ?DESeqDataSetFromMatrix
-(coldata <- data.frame(row.names=colnames(countdata), condition))
-dds <- DESeqDataSetFromMatrix(countData=countdata, colData=coldata, design=~condition)
+(coldata <- data.frame(row.names=colnames(countdata_symbol), condition))
+View(coldata)
+
+dds <- DESeqDataSetFromMatrix(countData=countdata_symbol, colData=coldata, design=~condition)
 dds
 
 # Run the DESeq pipeline
 dds <- DESeq(dds)
 
 # Plot dispersions
-png("phototagpositivevsphototagnegative_qc-dispersions.png", 1000, 1000, pointsize=20)
+png("qc-dispersions.png", 1000, 1000, pointsize=20)
 plotDispEsts(dds, main="Dispersion plot")
 dev.off()
 
@@ -53,9 +157,8 @@ hist(assay(rld))
 ## Ugly:
 ## (mycols <- 1:length(unique(condition)))
 ## Use RColorBrewer, better
-#install.packages("RColorBrewer")
-#library(RColorBrewer)
-(mycols <- brewer.pal(8, "dark2")[1:length(unique(condition))])
+library(RColorBrewer)
+(mycols <- brewer.pal(8, "Dark2")[1:length(unique(condition))])
 
 # Sample distance heatmap
 sampleDists <- as.matrix(dist(t(assay(rld))))
@@ -118,8 +221,8 @@ write.csv(resdata, file="diffexpr-results.csv")
 hist(res$pvalue, breaks=50, col="grey")
 
 ## Examine independent filtering
-attr(res, "filterThreshold")
-plot(attr(res,"filterNumRej"), type="b", xlab="quantiles of baseMean", ylab="number of rejections")
+#attr(res, "filterThreshold")
+#plot(attr(res,"filterNumRej"), type="b", xlab="quantiles of baseMean", ylab="number of rejections")
 
 ## MA plot
 ## Could do with built-in DESeq2 function:
@@ -137,19 +240,160 @@ png("diffexpr-maplot.png", 1500, 1000, pointsize=20)
 maplot(resdata, main="MA Plot")
 dev.off()
 
+
+
+
+
+
+
+res
+  #columns(org.Hs.eg.db)
+  #ens.str <- substr(rownames(res), 1, 15)
+  
+  #res$symbol <- mapIds(org.Hs.eg.db,
+   #                  keys=ens.str,
+    #                 column="SYMBOL",
+     #                keytype="ENSEMBL",
+      #               multiVals="first")
+ #res$symbol
+  #resOrdered <- res[order(res$pvalue),]
+  #head(res)
+  
+  #rownames(resOrdered) <- symbols
+  ############
+#resOrderedDF <- as.data.frame(resOrdered)[1:58395, ]
+  ########
+#res
+```
+
+```{r}
 ## Volcano plot with "significant" genes labeled
 volcanoplot <- function (res, lfcthresh=2, sigthresh=0.05, main="Volcano Plot", legendpos="bottomright", labelsig=TRUE, textcx=1, ...) {
   with(res, plot(log2FoldChange, -log10(pvalue), pch=20, main=main, ...))
   with(subset(res, padj<sigthresh ), points(log2FoldChange, -log10(pvalue), pch=20, col="red", ...))
-  with(subset(res, abs(log2FoldChange)>lfcthresh), points(log2FoldChange, -log10(pvalue), pch=20, col="orange", ...))
-  with(subset(res, padj<sigthresh & abs(log2FoldChange)>lfcthresh), points(log2FoldChange, -log10(pvalue), pch=20, col="green", ...))
+  with(subset(res, abs(log2FoldChange)>lfcthresh), points(log2FoldChange, -log10(pvalue), pch=20, col="wheat", ...))
+  with(subset(res, padj<sigthresh & abs(log2FoldChange)>lfcthresh), points(log2FoldChange, -log10(pvalue), pch=20, col="wheat", ...))
   if (labelsig) {
     require(calibrate)
     with(subset(res, padj<sigthresh & abs(log2FoldChange)>lfcthresh), textxy(log2FoldChange, -log10(pvalue), labs=Gene, cex=textcx, ...))
   }
-  legend(legendpos, xjust=1, yjust=1, legend=c(paste("FDR<",sigthresh,sep=""), paste("|LogFC|>",lfcthresh,sep=""), "both"), pch=20, col=c("red","orange","green"))
+  legend(legendpos, xjust=1, yjust=1, legend=c(paste("FDR<",sigthresh,sep=""), paste("|LogFC|>",lfcthresh,sep=""), "both"), pch=20, col=c("blue","wheat","red"))
 }
 png("diffexpr-volcanoplot.png", 1200, 1000, pointsize=20)
 volcanoplot(resdata, lfcthresh=1, sigthresh=0.05, textcx=.8, xlim=c(-2.3, 2))
 dev.off()
+  ########################################
+```
+
+
+```{r}
+ 
+######################################
+png("ENHANCED-volcanoplot.png", 1200, 1000, pointsize=20)
+EnhancedVolcano(res,
+    lab = rownames(res),
+    x = 'log2FoldChange',
+    y = 'pvalue',
+    xlim = c(-6,6),
+    xlab = bquote(~Log[2]~ 'fold change'),
+    pCutoff = 10e-14,
+    FCcutoff = 2.0,
+    pointSize = 4.0,
+    labSize = 4.0,
+    colAlpha = 1,
+    legendPosition = 'right',
+    legendLabSize = 12,
+    legendIconSize = 4.0,
+    drawConnectors = TRUE,
+    widthConnectors = 0.2,
+    colConnectors = 'grey30')
+dev.off()
+```
+
+
+
+```{r}
+
+
+
+
+ outputPrefix <- "NFVSIschemia"
+library("pheatmap")
+  mat = assay(rld)[ head(order(resOrdered$padj),60), ] # select the top 30 genes with the lowest padj
+  mat
+  mat = mat - rowMeans(mat) # Subtract the row means from each value
+  # Optional, but to make the plot nicer:
+  df = as.data.frame(colData(rld)[,c("condition")]) # Create a dataframe with a column of the conditions
+  colnames(df) = "condition" # Rename the column header
+  rownames(df) = colnames(mat) # add rownames
+  rownames(df)
+  # and plot the actual heatmap
+  
+png(paste("HEATMAP_TOPGENES.png", sep=""),width = 1200, height = 1200, units = "px", pointsize = 12)
+  pheatmap(mat, annotation_col=df)
+  dev.off()
+  dev.set(dev.next())
+  #correlation matrix 
+  
+  
+  resdata1 <- merge(as.data.frame(resdata), as.data.frame(counts(dds, normalized=TRUE)), by="row.names", sort=FALSE)
+  
+  names(resdata1)[1] <- "Gene"
+  #resdata = data.frame(resdata,significance) 
+  print(head(resdata1))
+  
+  expression_matrix <- resdata1[,c(1,8:ncol(resdata))]
+  print(head(expression_matrix))
+  
+  #--- get correlation matrix
+  gg <- ggpairs(expression_matrix, columns = 2:ncol(expression_matrix), upper = list(continuous = wrap("cor", size = 5, color="black"))) +
+    theme_bw() +
+    theme(legend.text = element_text(size = 25),
+          legend.title = element_text(size = 20),         
+          axis.title.x = element_text(size = 15),        
+          axis.title.y = element_text(size = 15),
+          axis.text.x = element_text(size = 10),
+          axis.text.y = element_text(size = 10)) 
+
+
+ 
+  #--- write deseq output
+  up_deg <- subset(resdata, resdata$log2FoldChange> 0.6 & pvalue <= 0.05)
+  down_deg <- subset(resdata, resdata$log2FoldChange< -0.6 & pvalue <= 0.05)
+  write.table(resdata, file="Ischemia Vs Nonfailing.tab")
+  openxlsx::write.xlsx(resdata, file=paste("ALL_DE_Output.tab", sep="\t"),row.names = F, append=F)
+  openxlsx::write.xlsx(up_deg,file=paste("up_deg.xlsx", sep=""),row.names = F, append=T)
+  openxlsx::write.xlsx(down_deg,file=paste("down_deg.xlsx", sep=""),row.names = F, append=T)
+  
+  
+```
+
+
+```{r}
+  
+
+
+
+
+columns(org.Hs.eg.db)
+  ens.str <- substr(rownames(res), 1, 15)
+  
+  res$symbol <- mapIds(org.Hs.eg.db,
+                     keys=ens.str,
+                     column="SYMBOL",
+                     keytype="ENSEMBL",
+                     multiVals="first")
+  res$symbol
+  resOrdered <- res[order(res$pvalue),]
+  head(resOrdered)
+  
+resOrderedDF <- as.data.frame(resOrdered)[1:20000, ]
+ write.csv(resOrderedDF, file = "results.csv")
+```
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Cmd+Option+I*.
+
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Cmd+Shift+K* to preview the HTML file). 
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
 
